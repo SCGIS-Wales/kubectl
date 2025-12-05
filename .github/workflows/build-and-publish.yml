@@ -1,0 +1,86 @@
+name: Build and Publish kubectl Images
+
+on:
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  fetch-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.get-versions.outputs.versions }}
+    steps:
+      - name: Fetch last 3 major kubectl versions
+        id: get-versions
+        run: |
+          # Fetch all stable versions
+          VERSIONS=$(curl -s https://dl.k8s.io/release/stable.txt | head -1)
+          MAJOR_MINOR=$(echo $VERSIONS | cut -d. -f1-2)
+          
+          # Get last 3 major versions
+          ALL_VERSIONS=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases | \
+            jq -r '.[].tag_name' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -r)
+          
+          # Extract last 3 major versions
+          LAST_3_MAJOR=$(echo "$ALL_VERSIONS" | awk -F. '{print $1"."$2}' | uniq | head -3)
+          
+          # Get latest patch for each major version
+          VERSIONS_JSON="["
+          for major in $LAST_3_MAJOR; do
+            LATEST_PATCH=$(echo "$ALL_VERSIONS" | grep "^$major\." | head -1)
+            VERSIONS_JSON="${VERSIONS_JSON}\"${LATEST_PATCH}\","
+          done
+          VERSIONS_JSON="${VERSIONS_JSON%,}]"
+          
+          echo "versions=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+          echo "Found versions: $VERSIONS_JSON"
+
+  build-and-push:
+    needs: fetch-versions
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ${{fromJson(needs.fetch-versions.outputs.versions)}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract version tags
+        id: meta
+        run: |
+          VERSION=${{ matrix.version }}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "short_version=${VERSION%.*}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          build-args: |
+            KUBECTL_VERSION=${{ matrix.version }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/kubectl:${{ matrix.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/kubectl:${{ steps.meta.outputs.short_version }}
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/kubectl:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/kubectl:buildcache,mode=max
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/kubectl
+          short-description: "Alpine-based kubectl with weekly security patches"
