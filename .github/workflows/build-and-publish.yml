@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       versions: ${{ steps.get-versions.outputs.versions }}
+      latest_version: ${{ steps.get-versions.outputs.latest_version }}
       release_tag: ${{ steps.get-versions.outputs.release_tag }}
     steps:
       - name: Fetch last 3 major kubectl versions
@@ -33,8 +34,13 @@ jobs:
           
           # Get latest patch for each major version
           VERSIONS_JSON="["
+          FIRST=true
           for major in $LAST_3_MAJOR; do
             LATEST_PATCH=$(echo "$ALL_VERSIONS" | grep "^$major\." | head -1)
+            if [ "$FIRST" = true ]; then
+              LATEST_VERSION="$LATEST_PATCH"
+              FIRST=false
+            fi
             VERSIONS_JSON="${VERSIONS_JSON}\"${LATEST_PATCH}\","
           done
           VERSIONS_JSON="${VERSIONS_JSON%,}]"
@@ -43,8 +49,10 @@ jobs:
           RELEASE_TAG="weekly-$(date +%Y-%m-%d)"
           
           echo "versions=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "Found versions: $VERSIONS_JSON"
+          echo "Latest version: $LATEST_VERSION"
           echo "Release tag: $RELEASE_TAG"
 
   build-and-push:
@@ -72,9 +80,18 @@ jobs:
         run: |
           VERSION=${{ matrix.version }}
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          LATEST_VERSION=${{ needs.fetch-versions.outputs.latest_version }}
+          
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "short_version=${VERSION%.*}" >> $GITHUB_OUTPUT
           echo "repo_owner=${REPO_OWNER}" >> $GITHUB_OUTPUT
+          
+          # Only add latest tag to the newest version
+          if [ "$VERSION" = "$LATEST_VERSION" ]; then
+            echo "is_latest=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_latest=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -87,7 +104,7 @@ jobs:
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:${{ matrix.version }}
             ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:${{ steps.meta.outputs.short_version }}
-            ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:latest
+            ${{ steps.meta.outputs.is_latest == 'true' && format('ghcr.io/{0}/kubectl:latest', steps.meta.outputs.repo_owner) || '' }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=Alpine-based kubectl ${{ matrix.version }} with weekly security patches
@@ -106,11 +123,13 @@ jobs:
       - name: Create kubectl-versions.json
         run: |
           VERSIONS='${{ needs.fetch-versions.outputs.versions }}'
+          LATEST_VERSION='${{ needs.fetch-versions.outputs.latest_version }}'
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           
           cat > kubectl-versions.json << EOF
           {
             "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "latest": "$LATEST_VERSION",
             "versions": $(echo $VERSIONS | jq -c '.'),
             "images": $(echo $VERSIONS | jq -r '.[]' | jq -R -s -c 'split("\n")[:-1] | map("ghcr.io/'$REPO_OWNER'/kubectl:" + .)')
           }
@@ -118,18 +137,23 @@ jobs:
           
           cat kubectl-versions.json
 
-      - name: Delete existing release if exists
-        continue-on-error: true
+      - name: Check and delete existing release if exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete ${{ needs.fetch-versions.outputs.release_tag }} --yes --cleanup-tag
+          if gh release view ${{ needs.fetch-versions.outputs.release_tag }} >/dev/null 2>&1; then
+            echo "Release exists, deleting..."
+            gh release delete ${{ needs.fetch-versions.outputs.release_tag }} --yes --cleanup-tag
+          else
+            echo "Release does not exist, proceeding with creation..."
+          fi
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSIONS='${{ needs.fetch-versions.outputs.versions }}'
+          LATEST_VERSION='${{ needs.fetch-versions.outputs.latest_version }}'
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           
           # Create release notes
@@ -141,19 +165,28 @@ jobs:
           ## Available Versions
           
           $(echo $VERSIONS | jq -r '.[]' | while read version; do
-            echo "- \`$version\` - \`ghcr.io/$REPO_OWNER/kubectl:$version\`"
+            if [ "$version" = "$LATEST_VERSION" ]; then
+              echo "- \`$version\` - \`ghcr.io/$REPO_OWNER/kubectl:$version\` ⭐ **latest**"
+            else
+              echo "- \`$version\` - \`ghcr.io/$REPO_OWNER/kubectl:$version\`"
+            fi
           done)
           
           ## How to Use
           
-          Pull a specific version:
+          Pull latest version:
           \`\`\`bash
-          docker pull ghcr.io/$REPO_OWNER/kubectl:v1.33.6
+          docker pull ghcr.io/$REPO_OWNER/kubectl:latest
+          \`\`\`
+          
+          Pull specific version:
+          \`\`\`bash
+          docker pull ghcr.io/$REPO_OWNER/kubectl:$LATEST_VERSION
           \`\`\`
           
           Run kubectl:
           \`\`\`bash
-          docker run --rm ghcr.io/$REPO_OWNER/kubectl:v1.33.6 version --client
+          docker run --rm ghcr.io/$REPO_OWNER/kubectl:latest version --client
           \`\`\`
           
           ## Features
