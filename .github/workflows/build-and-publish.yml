@@ -2,12 +2,12 @@ name: Build and Publish kubectl Images
 
 on:
   schedule:
-    # Run weekly on Sundays at 2 AM UTC
-    - cron: '0 2 * * 0'
+    # Run weekly on Fridays at 19:30 UTC
+    - cron: '30 19 * * 5'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       versions: ${{ steps.get-versions.outputs.versions }}
+      release_tag: ${{ steps.get-versions.outputs.release_tag }}
     steps:
       - name: Fetch last 3 major kubectl versions
         id: get-versions
@@ -38,8 +39,13 @@ jobs:
           done
           VERSIONS_JSON="${VERSIONS_JSON%,}]"
           
+          # Create release tag with date
+          RELEASE_TAG="weekly-$(date +%Y-%m-%d)"
+          
           echo "versions=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "Found versions: $VERSIONS_JSON"
+          echo "Release tag: $RELEASE_TAG"
 
   build-and-push:
     needs: fetch-versions
@@ -81,9 +87,90 @@ jobs:
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:${{ matrix.version }}
             ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:${{ steps.meta.outputs.short_version }}
+            ghcr.io/${{ steps.meta.outputs.repo_owner }}/kubectl:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=Alpine-based kubectl with weekly security patches
+            org.opencontainers.image.description=Alpine-based kubectl ${{ matrix.version }} with weekly security patches
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ matrix.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  create-release:
+    needs: [fetch-versions, build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create kubectl-versions.json
+        run: |
+          VERSIONS='${{ needs.fetch-versions.outputs.versions }}'
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          cat > kubectl-versions.json << EOF
+          {
+            "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "versions": $(echo $VERSIONS | jq -c '.'),
+            "images": $(echo $VERSIONS | jq -r '.[]' | jq -R -s -c 'split("\n")[:-1] | map("ghcr.io/'$REPO_OWNER'/kubectl:" + .)')
+          }
+          EOF
+          
+          cat kubectl-versions.json
+
+      - name: Delete existing release if exists
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete ${{ needs.fetch-versions.outputs.release_tag }} --yes --cleanup-tag
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSIONS='${{ needs.fetch-versions.outputs.versions }}'
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          
+          # Create release notes
+          cat > release-notes.md << EOF
+          # Weekly kubectl Container Images
+          
+          **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          ## Available Versions
+          
+          $(echo $VERSIONS | jq -r '.[]' | while read version; do
+            echo "- \`$version\` - \`ghcr.io/$REPO_OWNER/kubectl:$version\`"
+          done)
+          
+          ## How to Use
+          
+          Pull a specific version:
+          \`\`\`bash
+          docker pull ghcr.io/$REPO_OWNER/kubectl:v1.33.6
+          \`\`\`
+          
+          Run kubectl:
+          \`\`\`bash
+          docker run --rm ghcr.io/$REPO_OWNER/kubectl:v1.33.6 version --client
+          \`\`\`
+          
+          ## Features
+          
+          - ✅ Based on Alpine Linux (latest)
+          - ✅ Weekly security updates and patches
+          - ✅ Last 3 major kubectl versions
+          - ✅ SHA256 verification of binaries
+          - ✅ Minimal size
+          
+          ## Published Versions
+          
+          See \`kubectl-versions.json\` for machine-readable format.
+          EOF
+          
+          gh release create ${{ needs.fetch-versions.outputs.release_tag }} \
+            kubectl-versions.json \
+            --title "Weekly kubectl Images - $(date +%Y-%m-%d)" \
+            --notes-file release-notes.md \
+            --latest
