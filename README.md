@@ -5,7 +5,7 @@ Lightweight Alpine-based Docker image with kubectl pre-installed. Automatically 
 ## Features
 
 - ✅ Based on Alpine Linux (latest)
-- ✅ Weekly security updates and patches (every Friday at 19:35 UTC)
+- ✅ Weekly security updates and patches (every Friday at 19:40 UTC)
 - ✅ Last 3 major kubectl versions maintained
 - ✅ SHA256 verification of kubectl binaries
 - ✅ Minimal size
