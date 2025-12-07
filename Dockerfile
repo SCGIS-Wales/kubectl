@@ -1,25 +1,25 @@
-FROM alpine:latest
+# Stage 1: Fetch and validate kubectl binary
+FROM alpine:latest AS builder
 
-# Update and patch Alpine to latest security updates
-RUN apk update && \
-    apk upgrade && \
-    apk add --no-cache curl ca-certificates && \
-    rm -rf /var/cache/apk/*
-
+# Download and validate kubectl
 ARG KUBECTL_VERSION=latest
-
-# Download and install kubectl
 RUN if [ "$KUBECTL_VERSION" = "latest" ]; then \
-        KUBECTL_VERSION=$(curl -s https://dl.k8s.io/release/stable.txt); \
+        KUBECTL_VERSION=$(wget -qO- https://dl.k8s.io/release/stable.txt); \
     fi && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
+    wget -O kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    wget -O kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" && \
     echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c && \
     chmod +x kubectl && \
-    mv kubectl /usr/local/bin/ && \
     rm kubectl.sha256
 
-# Verify kubectl is in PATH and working
-RUN kubectl version --client
+# Verify kubectl is working
+RUN ./kubectl version --client
 
-CMD ["kubectl"]
+# Stage 2: Minimal final image with only kubectl binary
+FROM scratch
+
+# Copy only the kubectl binary from builder stage
+COPY --from=builder --chown=0:0 /kubectl /kubectl
+
+# Set kubectl as entrypoint
+ENTRYPOINT ["/kubectl"]
