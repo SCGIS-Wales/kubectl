@@ -7,10 +7,9 @@ Lightweight Alpine-based Docker image with kubectl pre-installed. Automatically 
 - ✅ Hardened security: Only kubectl binary in final image (no shell, no package managers)
 - ✅ Based on scratch (minimal base image)
 - ✅ Multi-stage build with SHA256 verification
-- ✅ Last 3 major kubectl versions maintained
-- ✅ Weekly rebuilds (every Friday at 19:30 UTC)
-- ✅ Minimal size and attack surface
-- ✅ Published to GitHub Container Registry
+- ✅ Based on Alpine Linux (latest)
+- ✅ Weekly security updates and patches (every Friday at 19:40 UTC)
+
 
 ## Usage
 
@@ -34,7 +33,7 @@ Images are available with the following tags:
 
 ## Weekly Releases
 
-Every Friday at 19:30 UTC, a new release is created with:
+Every Friday at 19:35 UTC, a new release is created with:
 - Updated container images with latest Alpine security patches
 - `kubectl-versions.json` containing published versions
 - Release notes with image tags and usage instructions
