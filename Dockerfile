@@ -1,6 +1,12 @@
 # Stage 1: Fetch and validate kubectl binary
 FROM alpine:latest AS builder
 
+# Install ca-certificates for HTTPS downloads
+RUN apk add --no-cache ca-certificates
+
+# Set working directory
+WORKDIR /build
+
 # Download and validate kubectl
 ARG KUBECTL_VERSION=latest
 RUN if [ "$KUBECTL_VERSION" = "latest" ]; then \
@@ -19,7 +25,7 @@ RUN ./kubectl version --client
 FROM scratch
 
 # Copy only the kubectl binary from builder stage
-COPY --from=builder --chown=0:0 /kubectl /kubectl
+COPY --from=builder --chown=0:0 /build/kubectl /kubectl
 
 # Set kubectl as entrypoint
 ENTRYPOINT ["/kubectl"]
