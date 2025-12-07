@@ -4,12 +4,12 @@ Lightweight Alpine-based Docker image with kubectl pre-installed. Automatically 
 
 ## Features
 
+- ✅ Hardened security: Only kubectl binary in final image (no shell, no package managers)
+- ✅ Based on scratch (minimal base image)
+- ✅ Multi-stage build with SHA256 verification
 - ✅ Based on Alpine Linux (latest)
 - ✅ Weekly security updates and patches (every Friday at 19:40 UTC)
-- ✅ Last 3 major kubectl versions maintained
-- ✅ SHA256 verification of kubectl binaries
-- ✅ Minimal size
-- ✅ Published to GitHub Container Registry
+
 
 ## Usage
 
@@ -19,9 +19,6 @@ docker pull ghcr.io/<your-username>/kubectl:v1.33.6
 
 # Run kubectl commands
 docker run --rm ghcr.io/<your-username>/kubectl:v1.33.6 version --client
-
-# Interactive shell
-docker run -it --rm ghcr.io/<your-username>/kubectl:v1.33.6 sh
 
 # Use in Kubernetes job
 docker run --rm -v ~/.kube:/root/.kube ghcr.io/<your-username>/kubectl:v1.33.6 get pods
@@ -67,10 +64,11 @@ docker build -t kubectl:latest .
 
 ## Security
 
-- Alpine base image is updated and patched on every build
-- kubectl binaries are verified with SHA256 checksums
-- Weekly automated rebuilds ensure latest security patches
-- Images are scanned for vulnerabilities
+- Final image contains **only** the kubectl binary (no shell, curl, apk, or other tools)
+- Multi-stage build: Alpine used only for fetching/validating, scratch used for final image
+- kubectl binaries are verified with SHA256 checksums during build
+- Minimal attack surface with no unnecessary components
+- Images use root:root ownership as required by scratch base
 
 ## License
 

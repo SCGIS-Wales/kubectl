@@ -107,7 +107,7 @@ jobs:
             ${{ steps.meta.outputs.is_latest == 'true' && format('ghcr.io/{0}/kubectl:latest', steps.meta.outputs.repo_owner) || '' }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=Alpine-based kubectl ${{ matrix.version }} with weekly security patches
+            org.opencontainers.image.description=Hardened minimal kubectl ${{ matrix.version }} with only kubectl binary (no shell)
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ matrix.version }}
           cache-from: type=gha
@@ -191,11 +191,11 @@ jobs:
           
           ## Features
           
-          - ✅ Based on Alpine Linux (latest)
-          - ✅ Weekly security updates and patches
+          - ✅ Hardened security: Only kubectl binary in final image (no shell, no package managers)
+          - ✅ Based on scratch (minimal base image)
+          - ✅ Multi-stage build with SHA256 verification
           - ✅ Last 3 major kubectl versions
-          - ✅ SHA256 verification of binaries
-          - ✅ Minimal size
+          - ✅ Minimal size and attack surface
           
           ## Published Versions
           
