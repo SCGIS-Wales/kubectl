@@ -2,8 +2,8 @@ name: Build and Publish kubectl Images
 
 on:
   schedule:
-    # Run weekly on Fridays at 19:30 UTC
-    - cron: '30 19 * * 5'
+    # Run weekly on Fridays at 19:35 UTC
+    - cron: '40 19 * * 5'
   workflow_dispatch:
 
 permissions:
