@@ -2,6 +2,8 @@
 
 Lightweight Alpine-based Docker image with kubectl pre-installed. Automatically built weekly with the latest security patches and last 3 major kubectl versions.
 
+[![Build and Publish kubectl Images](https://github.com/SCGIS-Wales/kubectl/actions/workflows/build-and-publish.yml/badge.svg?branch=main)](https://github.com/SCGIS-Wales/kubectl/actions/workflows/build-and-publish.yml)
+
 ## Features
 
 - ✅ Hardened security: Only kubectl binary in final image (no shell, no package managers)
